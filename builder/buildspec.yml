@@ -1,0 +1,19 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+        python: 3.7
+  build:
+    commands:
+      #  Defines temporary environment variables
+      - chmod +x scripts/set_env_vars.sh; . scripts/set_env_vars.sh
+      - printenv
+
+      # # Creates or updates pipeline architecture
+      - pip install boto3
+      - python scripts/deploy_pipeline.py
+      
+      # # Source
+      - sed -i "s/{{ env_hash }}/${ENV_HASH}/g" config/feature.json
+      - zip source.zip -r config storage --include '*.yml' --include 'config/*.json'
+      - aws s3 cp source.zip s3://$SOURCE_BUCKET

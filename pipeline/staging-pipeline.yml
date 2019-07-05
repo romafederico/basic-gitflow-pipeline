@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  BaseName:
+    Type: String
+  EnvName:
+    Type: String
+
+Resources:
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${BaseName}-${EnvName}-source
+      VersioningConfiguration:
+        Status: Enabled
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${BaseName}-${EnvName}-artifact
+      VersioningConfiguration:
+        Status: Enabled
+
+  CloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvName}-cloudformation-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - cloudformation.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: CloudFormationNestedCFNAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - apigateway:*
+                  - application-autoscaling:*
+                  - cloudfront:*
+                  - cloudformation:*
+                  - dynamodb:*
+                  - iam:*
+                  - lambda:*
+                  - route53:*
+                  - route53domains:*
+                  - s3:*
+                  - ssm:*
+                Resource: "*"
+
+  CodePipeLineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvName}-codepipeline-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:*
+                  - cloudformation:*
+                  - iam:*
+                  - s3:*
+                Resource: "*"
+
+  DevelopPipeline:
+    DependsOn:
+      - ArtifactBucket
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub ${EnvName}-pipeline
+      RoleArn: !GetAtt CodePipeLineRole.Arn
+      ArtifactStore:
+          Type: S3
+          Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: S3
+                Version: 1
+              Configuration:
+                S3Bucket: !Ref SourceBucket
+                S3ObjectKey: source.zip
+              OutputArtifacts:
+                - Name: source-output
+        - Name: !Sub Deploy
+          Actions:
+            - Name: DeployStorage
+              RunOrder: 1
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: CloudFormation
+              InputArtifacts:
+                - Name: source-output
+              Configuration:
+                ActionMode: REPLACE_ON_FAILURE
+                ChangeSetName: DeployStorage
+                Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
+                StackName: !Sub ${EnvName}-storage
+                TemplatePath: source-output::storage/template.yml
+                TemplateConfiguration: !Sub source-output::config/${EnvName}.json
+                RoleArn: !GetAtt CloudFormationRole.Arn

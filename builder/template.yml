@@ -1,0 +1,81 @@
+# Deploy this first using 
+# aws cloudformation create-stack --region ap-southeast-2 --stack-name dreamlab-builder --template-body file://codebuild/template.yml --capabilities CAPABILITY_IAM --parameters ParameterKey=BaseName,ParameterValue=dreamlab 
+
+
+
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  BaseName:
+    Type: String
+
+Resources:
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /service-role/
+      Policies:
+        - PolicyName: CodeBuildPermissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                  - logs:*
+                  - cloudformation:*
+                  - iam:*
+                  - codepipeline:*
+                Resource:
+                  - "*"
+                  
+  Builder:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${BaseName}-builder
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Source:
+        Auth:
+          Type: OAUTH
+        Type: BITBUCKET
+        BuildSpec: codebuild/buildspec.yml
+        ReportBuildStatus: true
+        # TODO: Replace federicoroma username in Location for another transpire generic bitbucketuser
+        Location: https://federicoroma@bitbucket.org/transpire/dreamlabs-webserver.git 
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/master$
+          - - Type: EVENT
+              Pattern: PULL_REQUEST_MERGED
+            - Type: BASE_REF
+              Pattern: ^refs/heads/develop$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/feature/.*
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/release/.*
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: BASE_NAME
+            Value: !Sub ${BaseName}
+        Image: aws/codebuild/standard:2.0
+        Type: LINUX_CONTAINER

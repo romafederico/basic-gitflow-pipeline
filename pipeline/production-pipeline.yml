@@ -1,0 +1,304 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# Mappings:
+#   StageMap:
+#     Develop:
+#       Name: develop
+#       Region: ap-northeast-1
+#     Staging:
+#       Name: staging
+#       Region: ap-southeast-1
+#     Production:
+#       Name: production
+#       Region: ap-southeast-2
+
+Parameters:
+  BaseName:
+    Type: String
+  EnvName:
+    Type: String
+  # SourceBucket:
+  #   Type: String
+  # SourceFile:
+  #   Type: String
+
+Resources:
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${BaseName}-${EnvName}-source
+
+  # PipelineLambdaExecutionRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     RoleName: !Sub ${StageName}-lambda-execution-role
+  #     AssumeRolePolicyDocument:
+  #       Version: '2012-10-17'
+  #       Statement:
+  #         - Effect: Allow
+  #           Action: 'sts:AssumeRole'
+  #           Principal:
+  #             Service:
+  #               - lambda.amazonaws.com
+  #     Policies:
+  #       - PolicyName: WriteCloudWatchLogs
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - 'logs:CreateLogGroup'
+  #                 - 'logs:CreateLogStream'
+  #                 - 'logs:PutLogEvents'
+  #               Resource: 'arn:aws:logs:*:*:*'
+  #       - PolicyName: S3CreateBuckets
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - 's3:*'
+  #               Resource: '*'
+  #       - PolicyName: InvokeLambdaFunction
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - 'lambda:InvokeFunction'
+  #                 - 'lambda:UpdateFunctionConfiguration'
+  #               Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:manage-pipeline-artifact-buckets
+
+  # ArtifactBucketsLambda:
+  #   DependsOn:
+  #     - PipelineLambdaExecutionRole
+  #   Type: AWS::Lambda::Function
+  #   Properties:
+  #     FunctionName: manage-pipeline-artifact-buckets
+  #     Runtime: nodejs8.10
+  #     Role: !GetAtt PipelineLambdaExecutionRole.Arn
+  #     Handler: index.handler
+  #     Timeout: 300
+  #     Code:
+  #       ZipFile: |
+  #         'use strict';
+  #         const AWS = require('aws-sdk');
+  #         const response = require('cfn-response');
+  #         let timer;
+  #         let responseData = {"Value": []};
+  #         let allBuckets = {};
+
+  #         function forceStop(event, context, callback) {
+  #             clearInterval(timer);
+  #             responseData.Value.push("Custom resource timeout executed. Resource creation failed.");
+  #             response.send(event, context, response.FAILED, responseData);
+  #             callback("done");
+  #         }
+
+  #         function checkExistingBucket(bucketName) {
+  #             let response = false
+  #             allBuckets.Buckets.forEach(item => {
+  #                 if (item.Name === bucketName) {
+  #                     response = true;
+  #                 }
+  #             })
+  #             return response;
+  #         }
+
+  #         async function createBuckets(event) {
+  #             let S3;
+  #             let buckets = [];
+  #             let RequestType = event.RequestType;
+  #             let regions = event.ResourceProperties.Regions;
+
+  #             S3 = new AWS.S3();
+  #             await Promise.resolve(S3.listBuckets().promise())
+  #                 .then(value => {
+  #                     allBuckets = value;
+  #                 });
+  #             S3 = null;
+
+  #             regions.forEach(item => {
+  #                 switch (RequestType) {
+  #                     case "Create":
+  #                     case "Update":
+  #                         if(!checkExistingBucket("dreamlab.artifacts." + item[0])) {
+  #                             S3 = new AWS.S3({region: item[1]});
+  #                             buckets[item[0]] = S3.createBucket({
+  #                                 Bucket: "dreamlab.artifacts." + item[0],
+  #                                 CreateBucketConfiguration: {
+  #                                     LocationConstraint: item[1]
+  #                                 }
+  #                             }).promise();
+  #                             S3 = null;
+  #                         }
+  #                         break;
+
+  #                     case "Delete":
+  #                         if(checkExistingBucket("dreamlab.artifacts." + item[0])) {
+  #                           S3 = new AWS.S3({region: item[1]});
+  #                           buckets[item[0]] = S3.deleteBucket({
+  #                               Bucket: "dreamlab.artifacts." + item[0],
+  #                           }).promise();
+  #                           S3 = null;
+  #                         }
+  #                         break;
+  #                 }
+  #             });
+
+  #             await Promise.all([buckets.develop, buckets.testing, buckets.staging, buckets.production]).then(values => {
+  #                 values.forEach(i => {
+  #                     console.log("Bucket created", i);
+  #                 });
+  #                 return "Buckets created!!!!!"
+  #             });
+  #         }
+
+  #         exports.handler = async function(event, context, callback) {
+  #             timer = setInterval(function() { forceStop(event, context, callback); }, 290000);
+  #             try {
+  #                 responseData.Value.push(await createBuckets(event));
+  #                 response.send(event, context, response.SUCCESS, responseData);
+  #                 clearInterval(timer);
+  #                 callback(null, responseData.Value);
+  #             } catch(err) {
+  #                 clearInterval(timer);
+  #                 responseData.Value.push(err.message);
+  #                 response.send(event, context, response.FAILED, responseData);
+  #                 callback(err.message);
+  #             }
+  #         };
+
+  # PipelineArtifactBuckets:
+  #   DependsOn:
+  #     - ArtifactBucketsLambda
+  #   Type: 'Custom::PipelineArtifactBuckets'
+  #   Properties:
+  #     FunctionName: backend-pipeline-artifact-buckets
+  #     ServiceToken: !GetAtt ArtifactBucketsLambda.Arn
+  #     UpdateDummyValue: 0 # Change this value to anything if you want to force an update on a custom resource
+  #     Regions:
+  #       - [!FindInMap [StageMap, Develop, Name], !FindInMap [StageMap, Develop, Region]]
+  #       - [!FindInMap [StageMap, Staging, Name], !FindInMap [StageMap, Staging, Region]]
+  #       - [!FindInMap [StageMap, Production, Name], !FindInMap [StageMap, Production, Region]]
+
+  # CloudFormationRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     RoleName: !Sub cloudformation-role-${EnvHash}
+  #     AssumeRolePolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service:
+  #               - cloudformation.amazonaws.com
+  #           Action:
+  #             - sts:AssumeRole
+  #     Path: /
+  #     Policies:
+  #       - PolicyName: CloudFormationNestedCFNAccessPolicy
+  #         PolicyDocument:
+  #           Version: 2012-10-17
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - apigateway:*
+  #                 - application-autoscaling:*
+  #                 - cloudfront:*
+  #                 - cloudformation:*
+  #                 - dynamodb:*
+  #                 - iam:*
+  #                 - lambda:*
+  #                 - route53:*
+  #                 - route53domains:*
+  #                 - s3:*
+  #                 - ssm:*
+  #               Resource: "*"
+
+  # CodePipeLineRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     RoleName: !Sub codepipeline-role-${EnvHash}
+  #     AssumeRolePolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service:
+  #               - codepipeline.amazonaws.com
+  #           Action:
+  #             - sts:AssumeRole
+  #     Policies:
+  #       - PolicyName: root
+  #         PolicyDocument:
+  #           Version: 2012-10-17
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - codebuild:*
+  #                 - cloudformation:*
+  #                 - iam:*
+  #                 - s3:*
+  #               Resource: "*"
+
+  # DevelopCodePipeline:
+  #   DependsOn:
+  #     - PipelineArtifactBuckets
+  #   Type: AWS::CodePipeline::Pipeline
+  #   Properties:
+  #     Name: dreamlab-backend-develop-pipeline
+  #     RoleArn: !GetAtt CodePipeLineRole.Arn
+  #     ArtifactStore:
+  #         Type: S3
+  #         Location: !Ref ArtifactBucket
+  #     Stages:
+  #       - Name: Source
+  #         Actions:
+  #           - Name: Source
+  #             ActionTypeId:
+  #               Category: Source
+  #               Owner: AWS
+  #               Provider: S3
+  #               Version: 1
+  #             Configuration:
+  #               S3Bucket: !Ref Source
+  #               S3ObjectKey: !Ref SourceFile
+  #             OutputArtifacts:
+  #               - Name: source-output
+  #       - Name: !Sub feature-${EnvHash}
+  #         Actions:
+  #           - Name: DeployStorage
+  #             RunOrder: 1
+  #             ActionTypeId:
+  #               Category: Deploy
+  #               Owner: AWS
+  #               Version: 1
+  #               Provider: CloudFormation
+  #             InputArtifacts:
+  #               - Name: source-output
+  #             Configuration:
+  #               ActionMode: REPLACE_ON_FAILURE
+  #               ChangeSetName: DeployStorage
+  #               Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
+  #               StackName: !Sub feature-${EnvHash}
+  #               TemplatePath: source-output::storage/template.yml
+  #               TemplateConfiguration: source-output::storage/template.yml
+  #               RoleArn: !GetAtt CloudFormationRole.Arn
+  #           - Name: DeployAPI
+  #             RunOrder: 2
+  #             Region: !FindInMap [StageMap, Develop, Region]
+  #             ActionTypeId:
+  #               Category: Deploy
+  #               Owner: AWS
+  #               Version: 1
+  #               Provider: CloudFormation
+  #             InputArtifacts:
+  #               - Name: develop-build
+  #             Configuration:
+  #               ActionMode: REPLACE_ON_FAILURE
+  #               ChangeSetName: DeployAPI
+  #               Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
+  #               StackName: dreamlab-develop-api
+  #               TemplatePath: develop-build::aws_cloudformation/api-v3.yml
+  #               RoleArn: !GetAtt CloudFormationRole.Arn

@@ -1,0 +1,24 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  BaseName:
+    Type: String
+  EnvName:
+    Type: String
+
+Resources:
+  UserAvatarBucket:
+    Type: AWS::S3::Bucket
+  
+  UserProfileTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: countryCode
+          AttributeType: S
+      KeySchema:
+        - AttributeName: countryCode
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: '5'
+        WriteCapacityUnits: '5'

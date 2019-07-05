@@ -1,0 +1,19 @@
+{
+    "feature": {
+        "template": "pipeline/feature-pipeline.yml",
+        "region": "ap-south-1"
+    },
+    "develop": {
+        "force_feature_cleanup": true,
+        "template": "pipeline/develop-pipeline.yml",
+        "region": "ap-northeast-1"
+    },
+    "staging": {
+        "template": "pipeline/staging-pipeline.yml",
+        "region": "ap-southeast-1"
+    },
+    "production": {
+        "template": "pipeline/production-pipeline.yml",
+        "region": "ap-southeast-2"
+    }
+}

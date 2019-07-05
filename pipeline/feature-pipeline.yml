@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  EnvHash:
+    Type: String
+
+Resources:
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub feature-source-${EnvHash}
+      VersioningConfiguration:
+        Status: Enabled
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub feature-artifact-${EnvHash}
+      VersioningConfiguration:
+        Status: Enabled
+
+  CloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvHash}-cloudformation-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - cloudformation.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: CloudFormationNestedCFNAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - apigateway:*
+                  - application-autoscaling:*
+                  - cloudfront:*
+                  - cloudformation:*
+                  - dynamodb:*
+                  - iam:*
+                  - lambda:*
+                  - route53:*
+                  - route53domains:*
+                  - s3:*
+                  - ssm:*
+                Resource: "*"
+
+  CodePipeLineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvHash}-codepipeline-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:*
+                  - cloudformation:*
+                  - iam:*
+                  - s3:*
+                Resource: "*"
+
+  FeaturePipeline:
+    DependsOn:
+      - ArtifactBucket
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub pipeline-${EnvHash}
+      RoleArn: !GetAtt CodePipeLineRole.Arn
+      ArtifactStore:
+          Type: S3
+          Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: S3
+                Version: 1
+              Configuration:
+                S3Bucket: !Ref SourceBucket
+                S3ObjectKey: source.zip
+              OutputArtifacts:
+                - Name: source-output
+        - Name: !Sub feature-${EnvHash}
+          Actions:
+            - Name: DeployStorage
+              RunOrder: 1
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: CloudFormation
+              InputArtifacts:
+                - Name: source-output
+              Configuration:
+                ActionMode: REPLACE_ON_FAILURE
+                ChangeSetName: DeployStorage
+                Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
+                StackName: !Sub storage-${EnvHash}
+                TemplatePath: source-output::storage/template.yml
+                TemplateConfiguration: source-output::config/feature.json
+                RoleArn: !GetAtt CloudFormationRole.Arn
+            # - Name: DeployAPI
+            #   RunOrder: 2
+            #   Region: !FindInMap [StageMap, Develop, Region]
+            #   ActionTypeId:
+            #     Category: Deploy
+            #     Owner: AWS
+            #     Version: 1
+            #     Provider: CloudFormation
+            #   InputArtifacts:
+            #     - Name: develop-build
+            #   Configuration:
+            #     ActionMode: REPLACE_ON_FAILURE
+            #     ChangeSetName: DeployAPI
+            #     Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
+            #     StackName: dreamlab-develop-api
+            #     TemplatePath: develop-build::aws_cloudformation/api-v3.yml
+            #     RoleArn: !GetAtt CloudFormationRole.Arn
+
