@@ -15,7 +15,7 @@ fi
 
 #  Defines source bucket names for all environments types
 if [ $ENV_NAME = "feature" ]; then 
-    export SOURCE_BUCKET="feature-source-$ENV_HASH"
+    export SOURCE_BUCKET="$BASE_NAME-$ENV_HASH-source"
 else
     export SOURCE_BUCKET="$BASE_NAME-$ENV_NAME-source"
 fi

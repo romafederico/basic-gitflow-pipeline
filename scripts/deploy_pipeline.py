@@ -15,15 +15,6 @@ def parse_template(template):
     cloudformation.validate_template(TemplateBody=template_data)
     return template_data
 
-def parse_parameters(parameters):
-    """
-    Imports parameters file from config folder and 
-    parses it as a string
-    """
-    with open(parameters) as parameter_fileobj:
-        parameter_data = json.load(parameter_fileobj)
-    return parameter_data
-
 def cleanup_feature_env(env_hash, pipeline_config):
     """
     Removes all infrastructure for a specific feature
@@ -35,11 +26,23 @@ def cleanup_feature_env(env_hash, pipeline_config):
     clients. 
     """
     _cloudformation = boto3.client('cloudformation', region_name=pipeline_config['feature']['region'])
+    _dynamodb = boto3.client('dynamodb', region_name=pipeline_config['feature']['region'])
     _available_stacks = _cloudformation.describe_stacks()
+    _available_tables = _dynamodb.list_tables()
     _s3 = boto3.resource('s3')
 
+
+    for item in _available_tables['TableNames']:
+        try:
+            if env_hash in item:
+                _dynamodb.delete_table(
+                    TableName=item
+                )
+        except Exception as e:
+            print(e)
+
     for item in _available_stacks['Stacks']:
-        if env_hash in item['StackName'] and f"feature-pipeline" not in item['StackName']:
+        if env_hash in item['StackName'] and f"{env_hash}-pipeline" not in item['StackName']:
             try:
                 print(f"CLEANING UP {item['StackName']}")
                 _cloudformation.delete_stack(
@@ -65,14 +68,14 @@ def cleanup_feature_env(env_hash, pipeline_config):
                     print("STACK DELETED. Exiting now.")
                     stack_deleted = True
                     
-        if item["StackName"] == f"feature-pipeline-{env_hash}":
+        if item["StackName"] == f"{base_name}-{env_hash}-pipeline":
             pipeline_stack = item
     
     if pipeline_stack:
         try:
             print(f"CLEANING UP {pipeline_stack['StackName']}")
-            source_bucket = _s3.Bucket(f"feature-source-{env_hash}")
-            artifact_bucket = _s3.Bucket(f"feature-artifact-{env_hash}")        
+            source_bucket = _s3.Bucket(f"{base_name}-{env_hash}-source")
+            artifact_bucket = _s3.Bucket(f"{base_name}-{env_hash}-artifact")        
             if source_bucket in _s3.buckets.all(): source_bucket.object_versions.all().delete()
             if artifact_bucket in _s3.buckets.all(): artifact_bucket.object_versions.all().delete()
             _cloudformation.delete_stack(
@@ -108,43 +111,29 @@ except Exception as e:
 
 existing_stack = False
 
-if env_name == "feature":
-    stack_name = f"{env_name}-pipeline-{env_hash}" 
-    stack_params = [
-        {
-            "ParameterKey": "EnvHash",
-            "ParameterValue": env_hash
-        }
-    ]
-    for item in available_stacks['Stacks']:
-        if f"{env_name}-pipeline-{env_hash}" == item['StackName']:
-            if item['StackStatus'] == "DELETE_FAILED":
-                cleanup_feature_env(env_hash, pipeline_config)
-            else:
-                existing_stack = True
+use_hash = True if "use_hash" in pipeline_config[env_name] else False
 
-else:
-    stack_name = f"{env_name}-pipeline" 
-    stack_params = [
-        {
-            "ParameterKey": "BaseName",
-            "ParameterValue": base_name
-        },
-        {
-            "ParameterKey": "EnvName",
-            "ParameterValue": env_name
-        }
-    ]
-    for item in available_stacks['Stacks']:
-        if f"{env_name}-pipeline" == item['StackName']:
-            existing_stack = True
+stack_name = "{}-{}-pipeline".format(base_name, env_hash if use_hash else env_name) 
+stack_params = [
+    {
+        "ParameterKey": "BaseName",
+        "ParameterValue": base_name
+    },
+    {
+        "ParameterKey": "EnvName",
+        "ParameterValue": env_hash if use_hash else env_name
+    }
+]
+for item in available_stacks['Stacks']:
+    if stack_name == item['StackName']:
+        existing_stack = True
 
-    if 'force_feature_cleanup' in pipeline_config[env_name]:
-        cleanup_feature_env(env_hash, pipeline_config)
+if "force_feature_cleanup" in pipeline_config[env_name]:
+    cleanup_feature_env(env_hash, pipeline_config)
 
 
 # Creates or updates the pipeline stack depending on its existence
-template_data = parse_template(pipeline_config[env_name]['template'])
+template_data = parse_template("pipeline/template.yml")
 if not existing_stack:
     print(f"CREATING STACK {stack_name}")
     try:

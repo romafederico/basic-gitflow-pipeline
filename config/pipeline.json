@@ -1,5 +1,6 @@
 {
     "feature": {
+        "use_hash": true,
         "template": "pipeline/feature-pipeline.yml",
         "region": "ap-south-1"
     },

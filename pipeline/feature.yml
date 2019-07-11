@@ -1,28 +1,33 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
 Parameters:
-  EnvHash:
+  BaseName:
     Type: String
+  EnvName:
+    Type: String
+
+Conditions:
+  IsNotFeatureEnv: !Or [!Equals [!Ref EnvName, production], !Equals [!Ref EnvName, staging], !Equals [!Ref EnvName, develop]]
 
 Resources:
   SourceBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub feature-source-${EnvHash}
+      BucketName: !Sub ${BaseName}-${EnvName}-source
       VersioningConfiguration:
         Status: Enabled
 
   ArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub feature-artifact-${EnvHash}
+      BucketName: !Sub ${BaseName}-${EnvName}-artifact
       VersioningConfiguration:
         Status: Enabled
 
   CloudFormationRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${EnvHash}-cloudformation-role
+      RoleName: !Sub ${EnvName}-cloudformation-role
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -56,7 +61,7 @@ Resources:
   CodePipeLineRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${EnvHash}-codepipeline-role
+      RoleName: !Sub ${EnvName}-codepipeline-role
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -84,7 +89,7 @@ Resources:
       - ArtifactBucket
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Sub pipeline-${EnvHash}
+      Name: !Sub pipeline-${EnvName}
       RoleArn: !GetAtt CodePipeLineRole.Arn
       ArtifactStore:
           Type: S3
@@ -103,7 +108,7 @@ Resources:
                 S3ObjectKey: source.zip
               OutputArtifacts:
                 - Name: source-output
-        - Name: !Sub feature-${EnvHash}
+        - Name: !Sub ${EnvName}-environment
           Actions:
             - Name: DeployStorage
               RunOrder: 1
@@ -118,25 +123,7 @@ Resources:
                 ActionMode: REPLACE_ON_FAILURE
                 ChangeSetName: DeployStorage
                 Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
-                StackName: !Sub storage-${EnvHash}
+                StackName: !Sub storage-${EnvName}
                 TemplatePath: source-output::storage/template.yml
-                TemplateConfiguration: source-output::config/feature.json
+                TemplateConfiguration: !If [IsNotFeatureEnv, !Sub "source-output::config/${EnvName}.json", "source-output::config/feature.json"]
                 RoleArn: !GetAtt CloudFormationRole.Arn
-            # - Name: DeployAPI
-            #   RunOrder: 2
-            #   Region: !FindInMap [StageMap, Develop, Region]
-            #   ActionTypeId:
-            #     Category: Deploy
-            #     Owner: AWS
-            #     Version: 1
-            #     Provider: CloudFormation
-            #   InputArtifacts:
-            #     - Name: develop-build
-            #   Configuration:
-            #     ActionMode: REPLACE_ON_FAILURE
-            #     ChangeSetName: DeployAPI
-            #     Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
-            #     StackName: dreamlab-develop-api
-            #     TemplatePath: develop-build::aws_cloudformation/api-v3.yml
-            #     RoleArn: !GetAtt CloudFormationRole.Arn
-
