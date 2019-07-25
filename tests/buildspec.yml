@@ -1,0 +1,12 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      nodejs: 8
+  build:
+    commands:
+      - pwd; ls -la; printenv # This could be useful to understand more about the nodejs environment, but not required.
+      - cd tests
+      - npm install
+      - npm test
+      - node get_api_spec.js

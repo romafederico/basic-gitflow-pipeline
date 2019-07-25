@@ -15,6 +15,7 @@ def parse_template(template):
     cloudformation.validate_template(TemplateBody=template_data)
     return template_data
 
+
 def cleanup_feature_env(env_hash, pipeline_config):
     """
     Removes all infrastructure for a specific feature
@@ -27,10 +28,11 @@ def cleanup_feature_env(env_hash, pipeline_config):
     """
     _cloudformation = boto3.client('cloudformation', region_name=pipeline_config['feature']['region'])
     _dynamodb = boto3.client('dynamodb', region_name=pipeline_config['feature']['region'])
+    _s3resource = boto3.resource('s3')
+    _s3client = boto3.client('s3')
     _available_stacks = _cloudformation.describe_stacks()
     _available_tables = _dynamodb.list_tables()
-    _s3 = boto3.resource('s3')
-
+    _available_buckets = _s3client.list_buckets()
 
     for item in _available_tables['TableNames']:
         try:
@@ -38,6 +40,14 @@ def cleanup_feature_env(env_hash, pipeline_config):
                 _dynamodb.delete_table(
                     TableName=item
                 )
+        except Exception as e:
+            print(e)
+
+    for item in _available_buckets['Buckets']:
+        try:
+            if env_hash in item['Name']:
+                bucket = _s3resource.Bucket(item['Name'])
+                bucket.object_versions.all().delete()
         except Exception as e:
             print(e)
 
@@ -74,10 +84,6 @@ def cleanup_feature_env(env_hash, pipeline_config):
     if pipeline_stack:
         try:
             print(f"CLEANING UP {pipeline_stack['StackName']}")
-            source_bucket = _s3.Bucket(f"{base_name}-{env_hash}-source")
-            artifact_bucket = _s3.Bucket(f"{base_name}-{env_hash}-artifact")        
-            if source_bucket in _s3.buckets.all(): source_bucket.object_versions.all().delete()
-            if artifact_bucket in _s3.buckets.all(): artifact_bucket.object_versions.all().delete()
             _cloudformation.delete_stack(
                 StackName=pipeline_stack['StackName']
             )
@@ -85,7 +91,7 @@ def cleanup_feature_env(env_hash, pipeline_config):
             print(e)
 
     
-# Takes environment variables defined in parent process (see codebuild/buildspec.yml)
+# Takes environment variables defined in parent process (see builder/buildspec.yml)
 base_name = os.environ['BASE_NAME']
 env_hash = os.environ['ENV_HASH']
 env_name = os.environ['ENV_NAME']

@@ -14,11 +14,11 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       AttributeDefinitions:
-        - AttributeName: countryCode
+        - AttributeName: user_id
           AttributeType: S
       KeySchema:
-        - AttributeName: countryCode
+        - AttributeName: user_id
           KeyType: HASH
       ProvisionedThroughput:
-        ReadCapacityUnits: '5'
-        WriteCapacityUnits: '5'
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5

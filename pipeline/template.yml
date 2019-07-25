@@ -6,6 +6,9 @@ Parameters:
   EnvName:
     Type: String
 
+Conditions:
+  IsNotFeatureEnv: !Or [!Equals [!Ref EnvName, production], !Equals [!Ref EnvName, staging], !Equals [!Ref EnvName, develop]]
+
 Resources:
   SourceBucket:
     Type: AWS::S3::Bucket
@@ -20,6 +23,35 @@ Resources:
       BucketName: !Sub ${BaseName}-${EnvName}-artifact
       VersioningConfiguration:
         Status: Enabled
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvName}-codebuild-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /service-role/
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - cloudfront:CreateInvalidation
+                  - s3:*
+                Resource:
+                  - "*"
 
   CloudFormationRole:
     Type: AWS::IAM::Role
@@ -81,12 +113,31 @@ Resources:
                   - s3:*
                 Resource: "*"
 
-  DevelopPipeline:
+  TestingEnvironment:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub testing-${EnvName}
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+        Name: source-output
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: tests/buildspec.yml
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: ENV_NAME
+            Value: !Ref EnvName
+        Image: aws/codebuild/standard:2.0
+        Type: LINUX_CONTAINER
+
+  Pipeline:
     DependsOn:
       - ArtifactBucket
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Sub ${EnvName}-pipeline
+      Name: !Sub pipeline-${EnvName}
       RoleArn: !GetAtt CodePipeLineRole.Arn
       ArtifactStore:
           Type: S3
@@ -105,7 +156,7 @@ Resources:
                 S3ObjectKey: source.zip
               OutputArtifacts:
                 - Name: source-output
-        - Name: !Sub Deploy
+        - Name: !Sub ${EnvName}-environment
           Actions:
             - Name: DeployStorage
               RunOrder: 1
@@ -120,7 +171,18 @@ Resources:
                 ActionMode: REPLACE_ON_FAILURE
                 ChangeSetName: DeployStorage
                 Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM
-                StackName: !Sub ${EnvName}-storage
+                StackName: !Sub storage-${EnvName}
                 TemplatePath: source-output::storage/template.yml
-                TemplateConfiguration: !Sub source-output::config/${EnvName}.json
+                TemplateConfiguration: !If [IsNotFeatureEnv, !Sub "source-output::config/${EnvName}.json", "source-output::config/feature.json"]
                 RoleArn: !GetAtt CloudFormationRole.Arn
+            - Name: Test
+              RunOrder: 2
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              InputArtifacts:
+                - Name: source-output
+              Configuration:
+                ProjectName: !Ref TestingEnvironment

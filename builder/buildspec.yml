@@ -14,5 +14,5 @@ phases:
       
       # # Source
       - sed -i "s/{{ env_hash }}/${ENV_HASH}/g" config/feature.json
-      - zip source.zip -r config storage --include '*.yml' --include '*.json'
+      - zip source.zip -r $(cat builder/source_whitelist) --exclude 'builder' --include '*.yml' --include '*.json'
       - aws s3 cp source.zip s3://$SOURCE_BUCKET
