@@ -1,6 +1,6 @@
 {
     "Parameters": {
-        "BaseName": "dreamlab",
+        "Prefix": {your_project_name},
         "EnvName": "{{ env_hash }}"
     }
 }

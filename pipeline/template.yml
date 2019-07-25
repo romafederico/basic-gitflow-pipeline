@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
 Parameters:
-  BaseName:
+  Prefix:
     Type: String
   EnvName:
     Type: String
@@ -13,14 +13,14 @@ Resources:
   SourceBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub ${BaseName}-${EnvName}-source
+      BucketName: !Sub ${Prefix}-${EnvName}-source
       VersioningConfiguration:
         Status: Enabled
 
   ArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub ${BaseName}-${EnvName}-artifact
+      BucketName: !Sub ${Prefix}-${EnvName}-artifact
       VersioningConfiguration:
         Status: Enabled
 

@@ -78,7 +78,7 @@ def cleanup_feature_env(env_hash, pipeline_config):
                     print("STACK DELETED. Exiting now.")
                     stack_deleted = True
                     
-        if item["StackName"] == f"{base_name}-{env_hash}-pipeline":
+        if item["StackName"] == f"{prefix}-{env_hash}-pipeline":
             pipeline_stack = item
     
     if pipeline_stack:
@@ -92,7 +92,7 @@ def cleanup_feature_env(env_hash, pipeline_config):
 
     
 # Takes environment variables defined in parent process (see builder/buildspec.yml)
-base_name = os.environ['BASE_NAME']
+prefix = os.environ['PREFIX']
 env_hash = os.environ['ENV_HASH']
 env_name = os.environ['ENV_NAME']
 
@@ -119,11 +119,11 @@ existing_stack = False
 
 use_hash = True if "use_hash" in pipeline_config[env_name] else False
 
-stack_name = "{}-{}-pipeline".format(base_name, env_hash if use_hash else env_name) 
+stack_name = "{}-{}-pipeline".format(prefix, env_hash if use_hash else env_name) 
 stack_params = [
     {
-        "ParameterKey": "BaseName",
-        "ParameterValue": base_name
+        "ParameterKey": "Prefix",
+        "ParameterValue": prefix
     },
     {
         "ParameterKey": "EnvName",

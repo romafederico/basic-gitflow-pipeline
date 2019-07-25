@@ -1,8 +1,15 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
 Parameters:
-  BaseName:
+  Prefix:
     Type: String
+  RepoUrl:
+    Type: String
+  RepoType:
+    Type: String
+    AvalableOptions:
+      - GITHUB
+      - BITBUCKET
 
 Resources:
   CodeBuildRole:
@@ -36,18 +43,17 @@ Resources:
   Builder:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub ${BaseName}-builder
+      Name: !Sub ${Prefix}-builder
       ServiceRole: !GetAtt CodeBuildRole.Arn
       Artifacts:
         Type: NO_ARTIFACTS
       Source:
         Auth:
           Type: OAUTH
-        Type: BITBUCKET
+        Type: !Ref RepoType
         BuildSpec: codebuild/buildspec.yml
         ReportBuildStatus: true
-        # TODO: Replace federicoroma username in Location for another transpire generic bitbucketuser
-        Location: https://federicoroma@bitbucket.org/transpire/dreamlabs-webserver.git 
+        Location: !Ref RepoUrl
       Triggers:
         Webhook: true
         FilterGroups:
@@ -70,7 +76,7 @@ Resources:
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
         EnvironmentVariables:
-          - Name: BASE_NAME
-            Value: !Sub ${BaseName}
+          - Name: PREFIX
+            Value: !Sub ${Prefix}
         Image: aws/codebuild/standard:2.0
         Type: LINUX_CONTAINER
