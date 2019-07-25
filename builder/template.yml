@@ -7,7 +7,7 @@ Parameters:
     Type: String
   RepoType:
     Type: String
-    AvalableOptions:
+    AllowedValues:
       - GITHUB
       - BITBUCKET
 
@@ -32,11 +32,12 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - s3:*
-                  - logs:*
                   - cloudformation:*
-                  - iam:*
+                  - codebuild:*
                   - codepipeline:*
+                  - iam:*
+                  - logs:*
+                  - s3:*
                 Resource:
                   - "*"
                   
@@ -51,7 +52,7 @@ Resources:
         Auth:
           Type: OAUTH
         Type: !Ref RepoType
-        BuildSpec: codebuild/buildspec.yml
+        BuildSpec: builder/buildspec.yml
         ReportBuildStatus: true
         Location: !Ref RepoUrl
       Triggers:
